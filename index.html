@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Worker Attendance</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f2f5;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      width: 90%;
+      max-width: 480px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    h2 {
+      margin: 0;
+      text-align: center;
+      font-size: 24px;
+    }
+
+    input, button, p {
+      margin: 10px 0;
+      padding: 12px;
+      width: 100%;
+      font-size: 16px;
+    }
+
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 12px;
+      margin: 5px 0;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+
+    button {
+      padding: 14px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    #photo-msg {
+      margin-top: 15px;
+      font-size: 16px;
+      color: #333;
+    }
+
+    /* Video and Canvas */
+    video {
+      width: 100%;
+      max-width: 400px;
+      margin: 10px 0;
+      border-radius: 8px;
+    }
+
+    canvas {
+      display: none;
+      margin-top: 10px;
+      width: 100%;
+      max-width: 400px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Responsiveness */
+    @media (max-width: 600px) {
+      h2 {
+        font-size: 20px;
+      }
+
+      input, button {
+        font-size: 14px;
+        padding: 10px;
+      }
+
+      video, canvas {
+        max-width: 100%;
+      }
+
+      #photo-msg {
+        font-size: 14px;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Worker Attendance</h2>
+    <input type="text" id="workerName" placeholder="Enter your name">
+    <button id="mark-in-btn">Mark In</button>
+    <button id="mark-out-btn" style="display:none;">Mark Out</button>
+
+    <video id="video" autoplay></video>
+    <button id="capture-btn">Capture Photo</button>
+    <canvas id="canvas" width="400" height="300"></canvas>
+    <p id="photo-msg">No photo captured yet.</p>
+    
+    <button onclick="getLocation()">Get Location</button>
+    <p id="location">Location will appear here...</p>
+  </div>
+
+  <script>
+    let workerName = document.getElementById('workerName');
+    let markInBtn = document.getElementById('mark-in-btn');
+    let markOutBtn = document.getElementById('mark-out-btn');
+    let photoUrl = "";
+    let locationData = "";
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const photoMsg = document.getElementById("photo-msg");
+    const captureBtn = document.getElementById("capture-btn");
+
+    // Access Camera
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+        .then((stream) => {
+          video.srcObject = stream;
+          video.play();
+        }).catch(err => {
+          console.error("Error accessing webcam: ", err);
+          photoMsg.innerText = "Error accessing webcam.";
+        });
+    } else {
+      photoMsg.innerText = "Camera not supported.";
+    }
+
+    // Capture Photo
+    captureBtn.addEventListener("click", () => {
+      const context = canvas.getContext("2d");
+      canvas.style.display = "block";
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      photoMsg.innerText = "Photo captured!";
+      
+      // Convert the canvas to a base64 image data
+      photoUrl = canvas.toDataURL("image/png");
+    });
+
+    // Get Location
+    function getLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+
+          // Get location address using reverse geocoding (OpenStreetMap API)
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`)
+            .then(response => response.json())
+            .then(data => {
+              locationData = data.display_name;
+              document.getElementById("location").innerText = locationData;
+            })
+            .catch(err => console.error("Error getting location", err));
+        });
+      } else {
+        alert("Geolocation is not supported by your browser.");
+      }
+    }
+
+    // Mark In & Out
+    markInBtn.onclick = function () {
+      if (workerName.value && locationData && photoUrl) {
+        const timeIn = new Date().toLocaleTimeString();
+        
+        // Send data to Google Apps Script endpoint
+        fetch("https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec", {
+          method: 'POST',
+          body: new URLSearchParams({
+            name: workerName.value,
+            timeIn: timeIn,
+            timeOut: "",
+            location: locationData,
+            photoUrl: photoUrl
+          })
+        }).then(response => response.json())
+          .then(data => {
+            if (data.status === "success") {
+              alert("Attendance marked IN!");
+            } else {
+              alert("Failed to submit data.");
+            }
+          });
+        
+        markInBtn.style.display = "none";
+        markOutBtn.style.display = "inline-block";
+      } else {
+        alert("Please fill out all details!");
+      }
+    };
+
+    markOutBtn.onclick = function () {
+      const timeOut = new Date().toLocaleTimeString();
+      
+      fetch("https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec", {
+        method: 'POST',
+        body: new URLSearchParams({
+          name: workerName.value,
+          timeIn: "",
+          timeOut: timeOut,
+          location: locationData,
+          photoUrl: photoUrl
+        })
+      }).then(response => response.json())
+        .then(data => {
+          if (data.status === "success") {
+            alert("Attendance marked OUT!");
+          } else {
+            alert("Failed to submit data.");
+          }
+        });
+
+      markOutBtn.style.display = "none";
+      markInBtn.style.display = "inline-block";
+    };
+  </script>
+</body>
+</html>
